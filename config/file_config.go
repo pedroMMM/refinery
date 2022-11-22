@@ -62,6 +62,7 @@ type configContents struct {
 	AdditionalErrorFields     []string
 	AddSpanCountToRoot        bool
 	CacheOverrunStrategy      string
+	UploadAttempts            int `validate:"min=1"`
 }
 
 type InMemoryCollectorCacheCapacity struct {
@@ -164,10 +165,10 @@ func NewConfig(config, rules string, errorCallback func(error)) (Config, error) 
 	c.SetDefault("AdditionalErrorFields", []string{"trace.span_id"})
 	c.SetDefault("AddSpanCountToRoot", false)
 	c.SetDefault("CacheOverrunStrategy", "resize")
+	c.SetDefault("UploadAttempts", 1)
 
 	c.SetConfigFile(config)
 	err := c.ReadInConfig()
-
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +257,6 @@ func (f *fileConfig) unmarshal() error {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	err := f.config.Unmarshal(f.conf)
-
 	if err != nil {
 		return err
 	}
@@ -912,6 +912,13 @@ func (f *fileConfig) GetCacheOverrunStrategy() string {
 	defer f.mux.RUnlock()
 
 	return f.conf.CacheOverrunStrategy
+}
+
+func (f *fileConfig) GetUploadAttempts() int {
+	f.mux.RLock()
+	defer f.mux.RUnlock()
+
+	return f.conf.UploadAttempts
 }
 
 // calculates an MD5 sum for a file that returns the same result as the md5sum command

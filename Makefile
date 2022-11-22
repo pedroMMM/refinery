@@ -37,7 +37,7 @@ dockerize: dockerize.tar.gz
 
 HOST_OS := $(shell uname -s | tr A-Z a-z)
 # You can override this version from an environment variable.
-DOCKERIZE_VERSION ?= v0.6.1
+DOCKERIZE_VERSION ?= v2.1.0
 DOCKERIZE_RELEASE_ASSET := dockerize-${HOST_OS}-amd64-${DOCKERIZE_VERSION}.tar.gz
 
 dockerize.tar.gz:
@@ -45,11 +45,11 @@ dockerize.tar.gz:
 	@echo "+++ Retrieving dockerize tool for Redis readiness check."
 	@echo
 # make sure that file is available
-	sudo apt-get update
-	sudo apt-get -y install file
+	# sudo apt-get update
+	# sudo apt-get -y install file
 	curl --location --silent --show-error \
 		--output dockerize.tar.gz \
-		https://github.com/jwilder/dockerize/releases/download/${DOCKERIZE_VERSION}/${DOCKERIZE_RELEASE_ASSET} \
+		https://github.com/presslabs/dockerize/releases/download/${DOCKERIZE_VERSION}/${DOCKERIZE_RELEASE_ASSET} \
 	&& file dockerize.tar.gz | grep --silent gzip
 
 .PHONY: clean
