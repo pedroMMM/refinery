@@ -16,7 +16,6 @@ func TestGRPCListenAddrEnvVar(t *testing.T) {
 	defer os.Unsetenv(envVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -33,7 +32,6 @@ func TestRedisHostEnvVar(t *testing.T) {
 	defer os.Unsetenv(envVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -50,7 +48,6 @@ func TestRedisUsernameEnvVar(t *testing.T) {
 	defer os.Unsetenv(envVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -67,7 +64,6 @@ func TestRedisPasswordEnvVar(t *testing.T) {
 	defer os.Unsetenv(envVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -101,7 +97,6 @@ func TestMetricsAPIKeyEnvVar(t *testing.T) {
 			defer os.Unsetenv(tc.envVar)
 
 			c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 			if err != nil {
 				t.Error(err)
 			}
@@ -125,7 +120,6 @@ func TestMetricsAPIKeyMultipleEnvVar(t *testing.T) {
 	defer os.Unsetenv(fallbackEnvVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -142,7 +136,6 @@ func TestMetricsAPIKeyFallbackEnvVar(t *testing.T) {
 	defer os.Unsetenv(envVarName)
 
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -239,7 +232,7 @@ func TestReload(t *testing.T) {
 		}
 	}()
 
-	if file, err := os.OpenFile(config, os.O_RDWR, 0644); err == nil {
+	if file, err := os.OpenFile(config, os.O_RDWR, 0o644); err == nil {
 		file.WriteString(`ListenAddr = "0.0.0.0:9000"`)
 		file.Close()
 	}
@@ -249,12 +242,10 @@ func TestReload(t *testing.T) {
 	if d, _ := c.GetListenAddr(); d != "0.0.0.0:9000" {
 		t.Error("received", d, "expected", "0.0.0.0:9000")
 	}
-
 }
 
 func TestReadDefaults(t *testing.T) {
 	c, err := NewConfig("../config.toml", "../rules.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -299,6 +290,10 @@ func TestReadDefaults(t *testing.T) {
 		t.Error("received", d, "expected", time.Hour)
 	}
 
+	if d := c.GetUploadAttempts(); d != 1 {
+		t.Error("received", d, "expected", 1)
+	}
+
 	d, name, err := c.GetSamplerConfigForDataset("dataset-doesnt-exist")
 	assert.NoError(t, err)
 	assert.IsType(t, &DeterministicSamplerConfig{}, d)
@@ -317,7 +312,6 @@ func TestReadDefaults(t *testing.T) {
 
 func TestReadRulesConfig(t *testing.T) {
 	c, err := NewConfig("../config.toml", "../rules_complete.toml", func(err error) {})
-
 	if err != nil {
 		t.Error(err)
 	}

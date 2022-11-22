@@ -107,7 +107,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), c.GetPeerTimeout())
 	defer cancel()
 	peers, err := peer.NewPeers(ctx, c)
-
 	if err != nil {
 		fmt.Printf("unable to load peers: %+v\n", err)
 		os.Exit(1)

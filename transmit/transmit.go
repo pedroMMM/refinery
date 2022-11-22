@@ -3,6 +3,7 @@ package transmit
 import (
 	"context"
 	"sync"
+	"time"
 
 	libhoney "github.com/honeycombio/libhoney-go"
 	"github.com/honeycombio/libhoney-go/transmission"
@@ -97,11 +98,22 @@ func (d *DefaultTransmission) EnqueueEvent(ev *types.Event) {
 	libhEv.Dataset = ev.Dataset
 	libhEv.SampleRate = ev.SampleRate
 	libhEv.Timestamp = ev.Timestamp
+
+	// if the field isn't present it will default to 0 making this the first attempt #1
+	// var attempt int
+	// if raw, ok := ev.Data["meta.refinery.upload_attempt"]; ok {
+	// 	attempt = raw.(int)
+	// }
+	attempt, _ := ev.Data["meta.refinery.upload_attempt"].(int)
+	attempt++
+	ev.Data["meta.refinery.upload_attempt"] = attempt
+
 	// metadata is used to make error logs more helpful when processing libhoney responses
 	metadata := map[string]any{
-		"api_host":    ev.APIHost,
-		"dataset":     ev.Dataset,
-		"environment": ev.Environment,
+		"api_host":       ev.APIHost,
+		"dataset":        ev.Dataset,
+		"environment":    ev.Environment,
+		"original_event": ev,
 	}
 
 	for _, k := range d.Config.GetAdditionalErrorFields() {
@@ -177,6 +189,8 @@ func (d *DefaultTransmission) processResponses(
 				}
 				log.Logf("error when sending event")
 				d.Metrics.Increment(d.Name + counterResponseErrors)
+
+				go d.processRetries(r)
 			} else {
 				d.Metrics.Increment(d.Name + counterResponse20x)
 			}
@@ -184,4 +198,39 @@ func (d *DefaultTransmission) processResponses(
 			return
 		}
 	}
+}
+
+func (d *DefaultTransmission) processRetries(r transmission.Response) {
+	// https://docs.honeycomb.io/api/events/#failure-responses
+	// The 400 responses are due to invalid user input
+	// The 403 responses are due to exceed monthly limit throttling
+	// =======
+	// switch to positive check for 429 and 5xx
+	// emit metrics for other status?
+	if r.StatusCode == 400 || r.StatusCode == 403 {
+		// log + metric
+		return
+	}
+
+	metadata, ok := r.Metadata.(map[string]any)
+	if !ok {
+		// log + metric
+		return
+	}
+
+	// pull data to calculate if we should keep attempting
+	originalEvent := metadata["original_event"].(*types.Event)
+	attempt := originalEvent.Data["meta.refinery.upload_attempt"].(int)
+	maxAttempts := d.Config.GetUploadAttempts()
+
+	if attempt >= maxAttempts {
+		// log + metric
+		return
+	}
+
+	// exponential backoff
+	time.Sleep(5 * time.Second)
+
+	// send event
+	d.EnqueueEvent(originalEvent)
 }

@@ -34,10 +34,13 @@ import (
 	"github.com/honeycombio/refinery/sample"
 	"github.com/honeycombio/refinery/sharder"
 	"github.com/honeycombio/refinery/transmit"
+	"github.com/honeycombio/refinery/types"
 )
 
-const legacyAPIKey = "c9945edf5d245834089a1bd6cc9ad01e"
-const nonLegacyAPIKey = "d245834089a1bd6cc9ad01e"
+const (
+	legacyAPIKey    = "c9945edf5d245834089a1bd6cc9ad01e"
+	nonLegacyAPIKey = "d245834089a1bd6cc9ad01e"
+)
 
 type countingWriterSender struct {
 	transmission.WriterSender
@@ -253,7 +256,7 @@ func TestAppIntegration(t *testing.T) {
 		case <-time.After(time.Millisecond):
 		}
 	}
-	assert.Equal(t, `{"data":{"foo":"bar","trace.trace_id":"1"},"dataset":"dataset"}`+"\n", out.String())
+	assert.Equal(t, `{"data":{"foo":"bar","meta.refinery.upload_attempt":1,"trace.trace_id":"1"},"dataset":"dataset"}`+"\n", out.String())
 }
 
 func TestAppIntegrationWithNonLegacyKey(t *testing.T) {
@@ -294,7 +297,7 @@ func TestAppIntegrationWithNonLegacyKey(t *testing.T) {
 		case <-time.After(time.Millisecond):
 		}
 	}
-	assert.Equal(t, `{"data":{"foo":"bar","trace.trace_id":"1"},"dataset":"dataset"}`+"\n", out.String())
+	assert.Equal(t, `{"data":{"foo":"bar","meta.refinery.upload_attempt":1,"trace.trace_id":"1"},"dataset":"dataset"}`+"\n", out.String())
 }
 
 func TestPeerRouting(t *testing.T) {
@@ -337,38 +340,56 @@ func TestPeerRouting(t *testing.T) {
 		return len(senders[0].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
 
+	data := map[string]interface{}{
+		"trace.trace_id":               "1",
+		"trace.span_id":                "0",
+		"trace.parent_id":              "0000000000",
+		"key":                          "value",
+		"field0":                       float64(0),
+		"field1":                       float64(1),
+		"field2":                       float64(2),
+		"field3":                       float64(3),
+		"field4":                       float64(4),
+		"field5":                       float64(5),
+		"field6":                       float64(6),
+		"field7":                       float64(7),
+		"field8":                       float64(8),
+		"field9":                       float64(9),
+		"field10":                      float64(10),
+		"long":                         "this is a test of the emergency broadcast system",
+		"foo":                          "bar",
+		"meta.refinery.upload_attempt": 1,
+	}
+
 	expectedEvent := &transmission.Event{
 		APIKey:     legacyAPIKey,
 		Dataset:    "dataset",
 		SampleRate: 2,
 		APIHost:    "http://api.honeycomb.io",
 		Timestamp:  now,
-		Data: map[string]interface{}{
-			"trace.trace_id":  "1",
-			"trace.span_id":   "0",
-			"trace.parent_id": "0000000000",
-			"key":             "value",
-			"field0":          float64(0),
-			"field1":          float64(1),
-			"field2":          float64(2),
-			"field3":          float64(3),
-			"field4":          float64(4),
-			"field5":          float64(5),
-			"field6":          float64(6),
-			"field7":          float64(7),
-			"field8":          float64(8),
-			"field9":          float64(9),
-			"field10":         float64(10),
-			"long":            "this is a test of the emergency broadcast system",
-			"foo":             "bar",
-		},
+		Data:       data,
 		Metadata: map[string]any{
 			"api_host":    "http://api.honeycomb.io",
 			"dataset":     "dataset",
 			"environment": "",
+			"original_event": &types.Event{
+				Data:       data,
+				APIHost:    "http://api.honeycomb.io",
+				APIKey:     legacyAPIKey,
+				Dataset:    "dataset",
+				SampleRate: 2,
+				Timestamp:  now,
+			},
 		},
 	}
-	assert.Equal(t, expectedEvent, senders[0].Events()[0])
+
+	got := senders[0].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
+	assert.Equal(t, expectedEvent, got)
 
 	// Repeat, but deliver to host 1 on the peer channel, it should not be
 	// passed to host 0.
@@ -386,7 +407,14 @@ func TestPeerRouting(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return len(senders[1].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
-	assert.Equal(t, expectedEvent, senders[0].Events()[0])
+
+	got = senders[1].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
+	assert.Equal(t, expectedEvent, got)
 }
 
 func TestHostMetadataSpanAdditions(t *testing.T) {
@@ -427,7 +455,7 @@ func TestHostMetadataSpanAdditions(t *testing.T) {
 		}
 	}
 
-	expectedSpan := `{"data":{"foo":"bar","meta.refinery.local_hostname":"%s","trace.trace_id":"1"},"dataset":"dataset"}` + "\n"
+	expectedSpan := `{"data":{"foo":"bar","meta.refinery.local_hostname":"%s","meta.refinery.upload_attempt":1,"trace.trace_id":"1"},"dataset":"dataset"}` + "\n"
 	assert.Equal(t, fmt.Sprintf(expectedSpan, hostname), out.String())
 }
 
@@ -474,6 +502,12 @@ func TestEventsEndpoint(t *testing.T) {
 		return len(senders[0].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
 
+	got := senders[0].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
 	assert.Equal(
 		t,
 		&transmission.Event{
@@ -483,16 +517,29 @@ func TestEventsEndpoint(t *testing.T) {
 			APIHost:    "http://api.honeycomb.io",
 			Timestamp:  now,
 			Data: map[string]interface{}{
-				"trace.trace_id": "1",
-				"foo":            "bar",
+				"trace.trace_id":               "1",
+				"foo":                          "bar",
+				"meta.refinery.upload_attempt": 1,
 			},
 			Metadata: map[string]any{
 				"api_host":    "http://api.honeycomb.io",
 				"dataset":     "dataset",
 				"environment": "",
+				"original_event": &types.Event{
+					Data: map[string]interface{}{
+						"trace.trace_id":               "1",
+						"foo":                          "bar",
+						"meta.refinery.upload_attempt": 1,
+					},
+					APIHost:    "http://api.honeycomb.io",
+					APIKey:     legacyAPIKey,
+					Dataset:    "dataset",
+					SampleRate: 10,
+					Timestamp:  now,
+				},
 			},
 		},
-		senders[0].Events()[0],
+		got,
 	)
 
 	// Repeat, but deliver to host 1 on the peer channel, it should not be
@@ -521,6 +568,12 @@ func TestEventsEndpoint(t *testing.T) {
 		return len(senders[1].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
 
+	got = senders[1].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
 	assert.Equal(
 		t,
 		&transmission.Event{
@@ -530,16 +583,29 @@ func TestEventsEndpoint(t *testing.T) {
 			APIHost:    "http://api.honeycomb.io",
 			Timestamp:  now,
 			Data: map[string]interface{}{
-				"trace.trace_id": "1",
-				"foo":            "bar",
+				"trace.trace_id":               "1",
+				"foo":                          "bar",
+				"meta.refinery.upload_attempt": 1,
 			},
 			Metadata: map[string]any{
 				"api_host":    "http://api.honeycomb.io",
 				"dataset":     "dataset",
 				"environment": "",
+				"original_event": &types.Event{
+					Data: map[string]interface{}{
+						"trace.trace_id":               "1",
+						"foo":                          "bar",
+						"meta.refinery.upload_attempt": 1,
+					},
+					APIHost:    "http://api.honeycomb.io",
+					APIKey:     legacyAPIKey,
+					Dataset:    "dataset",
+					SampleRate: 10,
+					Timestamp:  now,
+				},
 			},
 		},
-		senders[1].Events()[0],
+		got,
 	)
 }
 
@@ -588,6 +654,12 @@ func TestEventsEndpointWithNonLegacyKey(t *testing.T) {
 		return len(senders[0].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
 
+	got := senders[0].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
 	assert.Equal(
 		t,
 		&transmission.Event{
@@ -597,16 +669,30 @@ func TestEventsEndpointWithNonLegacyKey(t *testing.T) {
 			APIHost:    "http://api.honeycomb.io",
 			Timestamp:  now,
 			Data: map[string]interface{}{
-				"trace.trace_id": "1",
-				"foo":            "bar",
+				"trace.trace_id":               "1",
+				"foo":                          "bar",
+				"meta.refinery.upload_attempt": 1,
 			},
 			Metadata: map[string]any{
 				"api_host":    "http://api.honeycomb.io",
 				"dataset":     "dataset",
 				"environment": "test",
+				"original_event": &types.Event{
+					Data: map[string]interface{}{
+						"trace.trace_id":               "1",
+						"foo":                          "bar",
+						"meta.refinery.upload_attempt": 1,
+					},
+					APIHost:     "http://api.honeycomb.io",
+					APIKey:      nonLegacyAPIKey,
+					Dataset:     "dataset",
+					Environment: "test",
+					SampleRate:  10,
+					Timestamp:   now,
+				},
 			},
 		},
-		senders[0].Events()[0],
+		got,
 	)
 
 	// Repeat, but deliver to host 1 on the peer channel, it should not be
@@ -635,6 +721,12 @@ func TestEventsEndpointWithNonLegacyKey(t *testing.T) {
 		return len(senders[1].Events()) == 1
 	}, 2*time.Second, 2*time.Millisecond)
 
+	got = senders[1].Events()[0]
+
+	// We don't care for the contents of the "original_event" context
+	assert.NotNil(t, got.Metadata.(map[string]any)["original_event"].(*types.Event).Context)
+	got.Metadata.(map[string]any)["original_event"].(*types.Event).Context = nil
+
 	assert.Equal(
 		t,
 		&transmission.Event{
@@ -644,16 +736,30 @@ func TestEventsEndpointWithNonLegacyKey(t *testing.T) {
 			APIHost:    "http://api.honeycomb.io",
 			Timestamp:  now,
 			Data: map[string]interface{}{
-				"trace.trace_id": "1",
-				"foo":            "bar",
+				"trace.trace_id":               "1",
+				"foo":                          "bar",
+				"meta.refinery.upload_attempt": 1,
 			},
 			Metadata: map[string]any{
 				"api_host":    "http://api.honeycomb.io",
 				"dataset":     "dataset",
 				"environment": "test",
+				"original_event": &types.Event{
+					Data: map[string]interface{}{
+						"trace.trace_id":               "1",
+						"foo":                          "bar",
+						"meta.refinery.upload_attempt": 1,
+					},
+					APIHost:     "http://api.honeycomb.io",
+					APIKey:      nonLegacyAPIKey,
+					Dataset:     "dataset",
+					Environment: "test",
+					SampleRate:  10,
+					Timestamp:   now,
+				},
 			},
 		},
-		senders[1].Events()[0],
+		got,
 	)
 }
 
